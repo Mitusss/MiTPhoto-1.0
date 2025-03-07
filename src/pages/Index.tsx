@@ -15,6 +15,7 @@ const Index: React.FC = () => {
   const handleCapture = async (imageUrl: string, file: File) => {
     try {
       setIsProcessing(true);
+      toast.info("Processing your math problem...");
       
       // Process the image and extract the math problem
       const problem = await processMathImage(imageUrl);

@@ -23,6 +23,24 @@ export const imageToBase64 = (file: File): Promise<string> => {
 // Some example problems and solutions for demo purposes
 const exampleProblems = [
   {
+    problem: "1+1",
+    solution: "2",
+    steps: [
+      "Start with the expression: 1+1",
+      "Addition of 1 and 1 gives us 2",
+      "Therefore, 1+1 = 2"
+    ]
+  },
+  {
+    problem: "2+2",
+    solution: "4",
+    steps: [
+      "Start with the expression: 2+2",
+      "Addition of 2 and 2 gives us 4",
+      "Therefore, 2+2 = 4"
+    ]
+  },
+  {
     problem: "2x + 3 = 7",
     solution: "x = 2",
     steps: [
@@ -62,14 +80,24 @@ const exampleProblems = [
   }
 ];
 
-// Function to simulate extracting a math problem from an image
+// Simple OCR simulation for demo purposes - check for basic patterns
 export const extractProblemFromImage = (imageUrl: string): Promise<string> => {
   return new Promise((resolve) => {
     // Simulate processing delay
     setTimeout(() => {
-      const randomIndex = Math.floor(Math.random() * exampleProblems.length);
-      resolve(exampleProblems[randomIndex].problem);
-    }, 2000);
+      // For demo purposes, randomly select based on a simple pattern:
+      // If the image URL contains a timestamp that's divisible by 2, return "1+1"
+      const timestamp = new Date().getTime();
+      
+      if (timestamp % 3 === 0) {
+        resolve("1+1");
+      } else if (timestamp % 3 === 1) {
+        resolve("2+2");
+      } else {
+        const randomIndex = Math.floor(Math.random() * (exampleProblems.length - 2)) + 2;
+        resolve(exampleProblems[randomIndex].problem);
+      }
+    }, 1500);
   });
 };
 
@@ -78,6 +106,32 @@ export const solveMathProblem = (problem: string): Promise<{ solution: string; s
   return new Promise((resolve) => {
     // Simulate processing delay
     setTimeout(() => {
+      // Exact match for basic problems
+      if (problem === "1+1") {
+        resolve({
+          solution: "2",
+          steps: [
+            "Start with the expression: 1+1",
+            "Addition of 1 and 1 gives us 2",
+            "Therefore, 1+1 = 2"
+          ]
+        });
+        return;
+      }
+      
+      if (problem === "2+2") {
+        resolve({
+          solution: "4",
+          steps: [
+            "Start with the expression: 2+2",
+            "Addition of 2 and 2 gives us 4",
+            "Therefore, 2+2 = 4"
+          ]
+        });
+        return;
+      }
+      
+      // For other problems, find the matching problem in our examples
       const matchingProblem = exampleProblems.find(p => p.problem === problem);
       
       if (matchingProblem) {
@@ -92,7 +146,7 @@ export const solveMathProblem = (problem: string): Promise<{ solution: string; s
           steps: ["The problem format was not recognized"]
         });
       }
-    }, 1500);
+    }, 1000);
   });
 };
 
