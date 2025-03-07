@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { Camera as CameraIcon, Upload, RefreshCw, X, Check } from 'lucide-react';
+import { Camera as CameraIcon, Upload, RefreshCw, X, Check, Languages } from 'lucide-react';
 import ReactCrop, { centerCrop, makeAspectCrop, Crop, PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 
@@ -16,7 +16,7 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
   
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
-  const [isCameraAvailable, setIsCameraAvailable] = useState(true);
+  const [isCameraAvailable, setIsCameraAvailable] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -40,7 +40,7 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
         stream.getTracks().forEach(track => track.stop());
       }
 
-      // First check if we have camera permissions
+      // Check for camera permissions with better error handling
       const constraints = {
         video: { 
           facingMode: facingMode,
@@ -49,16 +49,16 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
         }
       };
 
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      setStream(newStream);
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream;
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+        setStream(newStream);
         
-        // More robust video loading handler with promises and timeouts
-        try {
-          await new Promise((resolve, reject) => {
-            if (!videoRef.current) return reject("Video element not found");
+        if (videoRef.current) {
+          videoRef.current.srcObject = newStream;
+          
+          // More robust video loading handler with promises and timeouts
+          await new Promise<void>((resolve, reject) => {
+            if (!videoRef.current) return reject(new Error("Video element not found"));
             
             const timeoutId = setTimeout(() => {
               reject(new Error("Video load timeout"));
@@ -66,7 +66,7 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
             
             videoRef.current.onloadedmetadata = () => {
               clearTimeout(timeoutId);
-              resolve(true);
+              resolve();
             };
             
             videoRef.current.onerror = (err) => {
@@ -78,10 +78,10 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
           await videoRef.current.play();
           setIsCameraActive(true);
           setIsCameraAvailable(true);
-        } catch (err) {
-          console.error("Error playing video:", err);
-          setIsCameraAvailable(false);
         }
+      } catch (err) {
+        console.error("Error accessing camera:", err);
+        setIsCameraAvailable(false);
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -92,21 +92,31 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
   }, [facingMode, stream]);
 
   useEffect(() => {
-    initCamera().catch(err => {
-      console.error("Camera initialization failed:", err);
-      setIsCameraAvailable(false);
-    });
+    // Don't auto-initialize camera to avoid permission prompts
+    // User will need to explicitly click a button to start the camera
+    setIsCameraAvailable(true); // Assume camera is available until proven otherwise
     
     return () => {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [facingMode, initCamera]);
+  }, [stream]);
+
+  // Start camera function that user can trigger
+  const startCamera = () => {
+    initCamera().catch(err => {
+      console.error("Camera initialization failed:", err);
+      setIsCameraAvailable(false);
+    });
+  };
 
   // Switch camera
   const switchCamera = () => {
     setFacingMode(prevMode => prevMode === 'user' ? 'environment' : 'user');
+    initCamera().catch(err => {
+      console.error("Camera switch failed:", err);
+    });
   };
 
   // Capture photo
@@ -184,7 +194,7 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
     }
   };
 
-  // Generate cropped image
+  // Generate cropped image with improved cropping
   const getCroppedImg = useCallback(() => {
     if (!imgRef.current || !completedCrop) return;
 
@@ -197,6 +207,10 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Apply high-quality image rendering
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     ctx.drawImage(
       imgRef.current,
@@ -251,6 +265,8 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
               className="max-w-full mx-auto"
               minHeight={50}
               minWidth={50}
+              ruleOfThirds
+              circularCrop={false}
             >
               <img
                 ref={imgRef}
@@ -304,7 +320,7 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
                     <CameraIcon className="h-12 w-12 mx-auto text-mitphoto-400 mb-4" />
                     <p className="text-gray-500">
                       {isCameraAvailable 
-                        ? "Camera initializing..." 
+                        ? "Click the camera button below to start" 
                         : "Camera not available. Please upload an image instead."}
                     </p>
                   </>
@@ -315,6 +331,16 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
         </div>
         
         <div className="flex justify-center gap-4 mt-6">
+          {!isCameraActive && isCameraAvailable && (
+            <button
+              onClick={startCamera}
+              className="p-5 rounded-full bg-mitphoto-500 shadow-lg hover:bg-mitphoto-600 transition-all duration-300 active:scale-95"
+              aria-label="Start Camera"
+            >
+              <CameraIcon className="h-7 w-7 text-white" />
+            </button>
+          )}
+          
           {isCameraAvailable && isCameraActive && (
             <>
               <button
@@ -345,8 +371,10 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
         </div>
         
         <p className="text-center text-sm text-muted-foreground mt-4">
-          {isCameraAvailable && isCameraActive 
-            ? "Capture or upload a photo of your math problem" 
+          {isCameraAvailable 
+            ? (isCameraActive 
+              ? "Capture or upload a photo of your math problem" 
+              : "Start camera or upload a photo of your math problem")
             : "Upload a photo of your math problem"}
         </p>
         

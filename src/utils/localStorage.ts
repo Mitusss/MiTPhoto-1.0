@@ -7,6 +7,7 @@ export interface MathProblem {
   solution: string;
   steps: string[];
   timestamp: number;
+  language?: string; // Add language field
 }
 
 // Key for localStorage
