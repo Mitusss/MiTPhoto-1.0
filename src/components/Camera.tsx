@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { Camera as CameraIcon, Upload, RefreshCw, Image, Crop } from 'lucide-react';
-import ReactCrop, { Crop as CropType, PixelCrop } from 'react-image-crop';
+import { Camera as CameraIcon, Upload, RefreshCw, X, Check } from 'lucide-react';
+import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 
 interface CameraProps {
@@ -22,17 +22,17 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
 
   // State for image cropping
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [crop, setCrop] = useState<CropType>({
+  const [crop, setCrop] = useState<ReactCrop.Crop>({
     unit: '%',
     width: 80,
     height: 80,
     x: 10,
     y: 10
   });
-  const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null);
+  const [completedCrop, setCompletedCrop] = useState<ReactCrop.PixelCrop | null>(null);
   const [isCropping, setIsCropping] = useState(false);
 
-  // Initialize camera
+  // Initialize camera with better error handling
   const initCamera = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -40,6 +40,7 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
         stream.getTracks().forEach(track => track.stop());
       }
 
+      // First check if we have camera permissions
       const constraints = {
         video: { 
           facingMode: facingMode,
@@ -54,16 +55,33 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        // Wait for metadata to load before playing
-        videoRef.current.onloadedmetadata = async () => {
-          try {
-            await videoRef.current?.play();
-            setIsCameraActive(true);
-            setIsCameraAvailable(true);
-          } catch (err) {
-            console.error("Error playing video:", err);
-          }
-        };
+        // More robust video loading handler with promises and timeouts
+        try {
+          await new Promise((resolve, reject) => {
+            if (!videoRef.current) return reject("Video element not found");
+            
+            const timeoutId = setTimeout(() => {
+              reject(new Error("Video load timeout"));
+            }, 10000);
+            
+            videoRef.current.onloadedmetadata = () => {
+              clearTimeout(timeoutId);
+              resolve(true);
+            };
+            
+            videoRef.current.onerror = (err) => {
+              clearTimeout(timeoutId);
+              reject(err);
+            };
+          });
+          
+          await videoRef.current.play();
+          setIsCameraActive(true);
+          setIsCameraAvailable(true);
+        } catch (err) {
+          console.error("Error playing video:", err);
+          setIsCameraAvailable(false);
+        }
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -74,7 +92,10 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
   }, [facingMode, stream]);
 
   useEffect(() => {
-    initCamera();
+    initCamera().catch(err => {
+      console.error("Camera initialization failed:", err);
+      setIsCameraAvailable(false);
+    });
     
     return () => {
       if (stream) {
@@ -118,6 +139,27 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
     }
   };
 
+  // Center and initialize the crop when the image is loaded
+  const onImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    if (e.currentTarget) {
+      const { width, height } = e.currentTarget;
+      const crop = centerCrop(
+        makeAspectCrop(
+          {
+            unit: '%',
+            width: 70,
+          },
+          1,
+          width,
+          height
+        ),
+        width,
+        height
+      );
+      setCrop(crop);
+    }
+  }, []);
+
   // Handle file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -142,23 +184,8 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
     }
   };
 
-  // Handle crop completion
-  const handleCropComplete = (croppedImage: string, originalFile: File) => {
-    // Create a new file from the cropped image
-    fetch(croppedImage)
-      .then(res => res.blob())
-      .then(blob => {
-        const croppedFile = new File([blob], originalFile.name, { type: 'image/jpeg' });
-        onCapture(croppedImage, croppedFile);
-      });
-
-    // Reset cropping state
-    setIsCropping(false);
-    setUploadedImage(null);
-  };
-
   // Generate cropped image
-  const getCroppedImg = () => {
+  const getCroppedImg = useCallback(() => {
     if (!imgRef.current || !completedCrop) return;
 
     const canvas = document.createElement('canvas');
@@ -183,15 +210,26 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
       completedCrop.height * scaleY
     );
 
-    // Get the data URL and create a file from the original uploaded image
-    const croppedImageUrl = canvas.toDataURL('image/jpeg');
+    // Get the data URL
+    const croppedImageUrl = canvas.toDataURL('image/jpeg', 0.95);
     
-    // Create a new file if we have the original uploaded image
-    if (uploadedImage) {
-      // Create a dummy file name since we don't have access to the original file here
-      const fileName = "cropped-math-problem.jpg";
-      handleCropComplete(croppedImageUrl, new File([new Blob()], fileName, { type: 'image/jpeg' }));
-    }
+    // Create a file from the cropped image
+    canvas.toBlob((blob) => {
+      if (blob && uploadedImage) {
+        const file = new File([blob], "cropped-math-problem.jpg", { type: 'image/jpeg' });
+        onCapture(croppedImageUrl, file);
+        
+        // Reset cropping state
+        resetCropState();
+      }
+    }, 'image/jpeg', 0.95);
+  }, [completedCrop, onCapture, uploadedImage]);
+
+  // Reset crop state
+  const resetCropState = () => {
+    setIsCropping(false);
+    setUploadedImage(null);
+    setCompletedCrop(null);
   };
 
   // Determine what to render
@@ -204,37 +242,40 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
             <p className="text-sm text-gray-500">Adjust the crop area to focus on the math problem</p>
           </div>
           
-          <div className="mb-4 overflow-hidden max-h-[60vh]">
+          <div className="mb-4 overflow-hidden max-h-[60vh] bg-gray-50 rounded-lg p-2">
             <ReactCrop
               crop={crop}
               onChange={(c) => setCrop(c)}
               onComplete={(c) => setCompletedCrop(c)}
               aspect={undefined}
               className="max-w-full mx-auto"
+              minHeight={50}
+              minWidth={50}
             >
               <img
                 ref={imgRef}
                 src={uploadedImage}
                 alt="Upload"
                 className="max-w-full max-h-[60vh] object-contain"
+                onLoad={onImageLoad}
               />
             </ReactCrop>
           </div>
           
           <div className="flex justify-center gap-3">
             <button
-              onClick={() => {
-                setIsCropping(false);
-                setUploadedImage(null);
-              }}
-              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
+              onClick={resetCropState}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
             >
+              <X size={18} />
               Cancel
             </button>
             <button
               onClick={getCroppedImg}
-              className="px-4 py-2 bg-mitphoto-500 text-white rounded-lg hover:bg-mitphoto-600 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-mitphoto-500 text-white rounded-lg hover:bg-mitphoto-600 transition-colors"
+              disabled={!completedCrop?.width || !completedCrop?.height}
             >
+              <Check size={18} />
               Crop & Analyze
             </button>
           </div>
@@ -273,8 +314,8 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
           )}
         </div>
         
-        <div className="flex justify-center gap-4">
-          {isCameraAvailable && (
+        <div className="flex justify-center gap-4 mt-6">
+          {isCameraAvailable && isCameraActive && (
             <>
               <button
                 onClick={switchCamera}
@@ -303,8 +344,10 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
           </button>
         </div>
         
-        <p className="text-center text-sm text-muted-foreground">
-          Capture or upload a photo of your math problem
+        <p className="text-center text-sm text-muted-foreground mt-4">
+          {isCameraAvailable && isCameraActive 
+            ? "Capture or upload a photo of your math problem" 
+            : "Upload a photo of your math problem"}
         </p>
         
         {/* Hidden canvas for capturing photos */}

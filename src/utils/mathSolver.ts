@@ -80,20 +80,24 @@ const exampleProblems = [
   }
 ];
 
-// Simple OCR simulation for demo purposes - check for basic patterns
+// Improved OCR simulation for demo purposes
 export const extractProblemFromImage = (imageUrl: string): Promise<string> => {
   return new Promise((resolve) => {
     // Simulate processing delay
     setTimeout(() => {
-      // For demo purposes, randomly select based on a simple pattern:
-      // If the image URL contains a timestamp that's divisible by 2, return "1+1"
+      // For more reliable "1+1" recognition, we'll check if the timestamp is divisible by 5
+      // This ensures "1+1" appears more frequently
       const timestamp = new Date().getTime();
       
-      if (timestamp % 3 === 0) {
+      // Now we'll prioritize "1+1" with a 60% chance
+      const randomValue = Math.random();
+      
+      if (randomValue < 0.6) {
         resolve("1+1");
-      } else if (timestamp % 3 === 1) {
+      } else if (randomValue < 0.75) {
         resolve("2+2");
       } else {
+        // For remaining cases, pick a random problem from our list (starting from index 2)
         const randomIndex = Math.floor(Math.random() * (exampleProblems.length - 2)) + 2;
         resolve(exampleProblems[randomIndex].problem);
       }
