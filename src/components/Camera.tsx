@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Camera as CameraIcon, Upload, RefreshCw, X, Check } from 'lucide-react';
-import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
+import ReactCrop, { centerCrop, makeAspectCrop, Crop, PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 
 interface CameraProps {
@@ -22,14 +22,14 @@ const Camera: React.FC<CameraProps> = ({ onCapture }) => {
 
   // State for image cropping
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [crop, setCrop] = useState<ReactCrop.Crop>({
+  const [crop, setCrop] = useState<Crop>({
     unit: '%',
     width: 80,
     height: 80,
     x: 10,
     y: 10
   });
-  const [completedCrop, setCompletedCrop] = useState<ReactCrop.PixelCrop | null>(null);
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null);
   const [isCropping, setIsCropping] = useState(false);
 
   // Initialize camera with better error handling
